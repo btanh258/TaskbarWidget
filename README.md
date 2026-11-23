@@ -1,4 +1,4 @@
-# Taskbar Widget 1.2.20
+# Taskbar Widget 1.2.21
 
 Một exe duy nhất trên taskbar Windows, gộp hai phần mềm:
 
@@ -16,6 +16,24 @@ Ví dụ trên taskbar (đề mục hệ thống in đậm, các mục cách nha
 ```
 CPU 12% 54° 20W | GPU 4% 44° 120W | RAM 61% 9.8/16.0 GB | VRAM 6% 0.5/8.0 GB | Disk 12% | SSD 38° | NET ↓1.2M ↑320K        [🎧 30%] | [📱 78%] | [🖱 93%]
 ```
+
+## Có gì mới trong 1.2.21
+
+- **Sửa lỗi ẩn mục rồi restart lại hiện:** các mục từng ẩn mặc
+  định ở bản cũ (GPU power, GPU/VRAM clock) được bỏ ẩn ở mỗi lần
+  mở app để nâng cấp — nhưng vì làm ở mọi lần mở nên ẩn lại cũng
+  mất sau khi restart. Giờ chỉ bỏ ẩn khi nâng cấp từ đúng bản cũ
+  đó, có ghi số phiên bản vào `settings.txt` để nhớ.
+- **Sửa lỗi CPU power nhảy lên mục Bluetooth:** khi không đọc
+  được công suất CPU, mục đó mất dữ liệu mới nên panel đoán loại
+  theo tên và xếp nhầm sang mục Bluetooth. Giờ mục hệ thống mất
+  dữ liệu vẫn ở đúng mục System (lấy loại từ khóa `sys:cpupower`).
+- **PawnIO thử lại khi lỗi:** trước đây thử mở driver một lần,
+  lỗi là thôi luôn tới khi mở lại app (đúng lúc vừa đăng nhập
+  driver chưa kịp chạy thì mất nhiệt độ + công suất CPU cả buổi).
+  Giờ thử lại mỗi 30 giây; `--dump` ghi rõ nguồn nhiệt độ CPU
+  (`PawnIO` / `Thermal Zone`) và trạng thái PawnIO (`pawnio:`).
+  Hỏi cài PawnIO cũng đợi 30 giây sau khi mở app thay vì 8 giây.
 
 ## Có gì mới trong 1.2.20
 

@@ -11,7 +11,7 @@ namespace BatteryBar
 {
     static class Program
     {
-        public const string Version = "1.2.20";
+        public const string Version = "1.2.21";
         public const string Repo = "https://github.com/btanh258/TaskbarWidget";
         const string MutexName = "TaskbarWidget.Single";
         public const string ShowEvent = "TaskbarWidget.ShowSettings";
@@ -178,6 +178,7 @@ namespace BatteryBar
         public static Settings Load()
         {
             var s = new Settings();
+            string ver = "";
             try
             {
                 if (!File.Exists(FilePath))
@@ -196,6 +197,7 @@ namespace BatteryBar
                     if (p.Length < 2) continue;
                     switch (p[0])
                     {
+                        case "ver": ver = p[1]; break;
                         case "interval": s.Interval = Math.Max(10, int.Parse(p[1])); break;
                         case "sysinterval": s.SysInterval = Math.Max(1, Math.Min(60, int.Parse(p[1]))); break;
                         case "btshow": s.ShowBluetooth = p[1] == "1"; break;
@@ -225,12 +227,29 @@ namespace BatteryBar
             s.Hidden.Remove("sys:gput");
             // 1.2.7: GPU power is shown merged into the GPU item now, so
             // unhide it on upgrade (it was hidden by default before).
-            s.Hidden.Remove("sys:gpupower");
             // 1.2.14: GPU/VRAM clock are shown merged into the GPU/VRAM
-            // items now, so unhide them on upgrade too.
-            s.Hidden.Remove("sys:gpuclk");
-            s.Hidden.Remove("sys:memclk");
+            // items now, so unhide them on upgrade too. These run ONLY
+            // when the stored version is older than the change: running
+            // them on every load meant hiding the items again never
+            // survived a restart (1.2.21). A file with no version (older
+            // than 1.2.21) is left alone, so a hidden item stays hidden
+            // across this upgrade.
+            if (ver != "" && CompareVer(ver, "1.2.7") < 0) s.Hidden.Remove("sys:gpupower");
+            if (ver != "" && CompareVer(ver, "1.2.14") < 0) { s.Hidden.Remove("sys:gpuclk"); s.Hidden.Remove("sys:memclk"); }
             return s;
+        }
+
+        static int CompareVer(string a, string b)
+        {
+            string[] pa = (a ?? "").Split('.'), pb = (b ?? "").Split('.');
+            for (int i = 0; i < Math.Max(pa.Length, pb.Length); i++)
+            {
+                int x = 0, y = 0;
+                if (i < pa.Length) int.TryParse(pa[i], out x);
+                if (i < pb.Length) int.TryParse(pb[i], out y);
+                if (x != y) return x - y;
+            }
+            return 0;
         }
 
         public void Save()
@@ -239,6 +258,7 @@ namespace BatteryBar
             {
                 Directory.CreateDirectory(Dir);
                 var lines = new List<string>();
+                lines.Add("ver\t" + Program.Version);
                 lines.Add("interval\t" + Interval);
                 lines.Add("sysinterval\t" + SysInterval);
                 lines.Add("btshow\t" + (ShowBluetooth ? "1" : "0"));
@@ -307,8 +327,10 @@ namespace BatteryBar
             // PawnIO: if CPU temperature/power are wanted but the driver is
             // missing, offer to install it once, shortly after startup
             // (TraySense asked the same way when CPU temp was enabled).
+            // 30s, not 8s: right after login the driver may still be
+            // starting, and a prompt then would be a false alarm.
             var pioTimer = new System.Windows.Forms.Timer();
-            pioTimer.Interval = 8000;
+            pioTimer.Interval = 30000;
             pioTimer.Tick += delegate
             {
                 pioTimer.Stop();

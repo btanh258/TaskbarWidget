@@ -95,6 +95,9 @@ namespace BatteryBar
         const uint IoctlPioExec = 0xA1B22104;
         int pioState; // 0 untried, 1 ok, 2 no driver, 3 failed, 4 unsupported
         IntPtr pioHandle = IntPtr.Zero;
+        DateTime lastPioTry;
+        string pioWhy = "";
+        string cpuTempSrc = "";
         int pioVendor; // 1 Intel, 2 AMD
         int tjMax = 100;
         Mutex pciMutex;
@@ -175,7 +178,7 @@ namespace BatteryBar
                     string text = "CPU " + ci + "%" + (hasCpuTemp ? " " + (int)Math.Round(cpuTemp) + "°" : "");
                     string value = ci + "%" + (hasCpuTemp ? " " + (int)Math.Round(cpuTemp) + "°" : "");
                     list.Add(Make("sys:cpu", "CPU usage", "cpu", ci, text, value, hasCpuTemp ? TempNote(cpuTemp, 80, 90) : null, false));
-                    log.AppendLine("  cpu: " + cpu.ToString("F1") + "%" + (hasCpuTemp ? " " + cpuTemp.ToString("F0") + "C" : ""));
+                    log.AppendLine("  cpu: " + cpu.ToString("F1") + "%" + (hasCpuTemp ? " " + cpuTemp.ToString("F0") + "C (" + cpuTempSrc + ")" : ""));
                 }
                 double cpuW;
                 if (CpuPower(out cpuW))
@@ -183,6 +186,7 @@ namespace BatteryBar
                     list.Add(Make("sys:cpupower", "CPU power", "cpupower", 0, "CPU " + (int)Math.Round(cpuW) + "W", (int)Math.Round(cpuW) + "W", null, true));
                     log.AppendLine("  cpu power: " + cpuW.ToString("F1") + "W");
                 }
+                log.AppendLine("  pawnio: " + (pioState == 1 ? "ok" : pioWhy));
                 double ram;
                 double ramUsed, ramTotal;
                 if (RamPct(out ram, out ramUsed, out ramTotal))
@@ -849,7 +853,7 @@ namespace BatteryBar
             try
             {
                 double t;
-                if (PioTemp(out t)) { temp = t; return true; }
+                if (PioTemp(out t)) { temp = t; cpuTempSrc = "PawnIO"; return true; }
                 RefreshCounters();
                 double mx = 0;
                 foreach (var c in thermCounters)
@@ -861,7 +865,7 @@ namespace BatteryBar
                     }
                     catch { }
                 }
-                if (mx > 200) { temp = mx - 273.15; return true; }
+                if (mx > 200) { temp = mx - 273.15; cpuTempSrc = "Thermal Zone"; return true; }
                 return false;
             }
             catch { return false; }
@@ -935,31 +939,42 @@ namespace BatteryBar
 
         bool PioInit()
         {
-            if (pioState != 0) return pioState == 1;
+            // A failed probe is retried every 30s, not cached forever:
+            // right after login the driver may not be started yet, and
+            // caching the failure killed CPU temp/power until the app
+            // was restarted (1.2.21). Unsupported CPUs never retry.
+            if (pioState != 0)
+            {
+                if (pioState == 1) return true;
+                if (pioState == 4) return false;
+                if ((DateTime.UtcNow - lastPioTry).TotalSeconds < 30) return false;
+                pioState = 0;
+            }
+            lastPioTry = DateTime.UtcNow;
             pioState = 3;
+            pioWhy = "failed";
             try
             {
                 EnsureWmi();
                 string m = (cpuVendor ?? "").ToLowerInvariant();
                 if (m.IndexOf("intel") >= 0) pioVendor = 1;
                 else if (m.IndexOf("amd") >= 0) pioVendor = 2;
-                else return false;
-                pioState = 4;
+                else { pioState = 4; pioWhy = "unsupported CPU"; return false; }
                 pioHandle = SysNative.CreateFile(@"\\?\GLOBALROOT\Device\PawnIO", 0xC0000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
-                if (pioHandle == IntPtr.Zero || pioHandle == new IntPtr(-1)) { pioState = 2; return false; }
+                if (pioHandle == IntPtr.Zero || pioHandle == new IntPtr(-1)) { pioState = 2; pioWhy = "no driver (err " + Marshal.GetLastWin32Error() + ")"; return false; }
                 string res = pioVendor == 1 ? "IntelMSR.bin" : "AMDFamily17.bin";
                 byte[] bin;
                 using (var s = Assembly.GetExecutingAssembly().GetManifestResourceStream(res))
                 {
-                    if (s == null) return false;
+                    if (s == null) { pioWhy = "no module resource"; return false; }
                     bin = new byte[s.Length];
-                    if (s.Read(bin, 0, bin.Length) != bin.Length) return false;
+                    if (s.Read(bin, 0, bin.Length) != bin.Length) { pioWhy = "no module resource"; return false; }
                 }
                 uint got;
                 GCHandle h = GCHandle.Alloc(bin, GCHandleType.Pinned);
                 try
                 {
-                    if (!SysNative.DeviceIoControl(pioHandle, IoctlPioLoad, h.AddrOfPinnedObject(), (uint)bin.Length, IntPtr.Zero, 0, out got, IntPtr.Zero)) return false;
+                    if (!SysNative.DeviceIoControl(pioHandle, IoctlPioLoad, h.AddrOfPinnedObject(), (uint)bin.Length, IntPtr.Zero, 0, out got, IntPtr.Zero)) { pioWhy = "module load failed"; return false; }
                 }
                 finally { h.Free(); }
                 if (pioVendor == 1)
@@ -976,9 +991,10 @@ namespace BatteryBar
                     try { pciMutex = new Mutex(false, @"Global\Access_PCI"); } catch { pciMutex = null; }
                 }
                 pioState = 1;
+                pioWhy = "";
                 return true;
             }
-            catch { return false; }
+            catch { pioWhy = "exception"; return false; }
         }
 
         bool PioExec(string fn, ulong input, out ulong output)

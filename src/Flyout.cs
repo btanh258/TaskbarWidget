@@ -117,7 +117,8 @@ namespace BatteryBar
                 var row = new Row { Key = k };
                 fresh.TryGetValue(k, out row.R);
                 row.Name = app.Settings.Names.ContainsKey(k) ? app.Settings.Names[k] : (row.R != null ? row.R.Name : k);
-                if (!app.Settings.Kind.TryGetValue(k, out row.Kind)) row.Kind = row.R != null ? row.R.Kind : Kinds.Guess(row.Name, "other");
+                if (!app.Settings.Kind.TryGetValue(k, out row.Kind))
+                    row.Kind = row.R != null ? row.R.Kind : (k.StartsWith("sys:") ? k.Substring(4) : Kinds.Guess(row.Name, "other"));
                 row.Hidden = app.Settings.Hidden.Contains(k);
                 rows.Add(row);
             }
