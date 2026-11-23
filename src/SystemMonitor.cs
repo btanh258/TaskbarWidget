@@ -10,7 +10,11 @@
 //            StorageDeviceTemperatureProperty first, else the NVMe SMART
 //            log page 2 (composite temp, Kelvin) — the property stays empty
 //            on many NVMe drives, notably in mini PCs (new in 1.2.14) —
-//            else classic ATA SMART attribute 0xC2/0xBE (new in 1.2.16).
+//            else classic ATA SMART attribute 0xC2/0xBE (new in 1.2.16),
+//            else WMI MSStorageDriver_ATAPISmartData (new in 1.2.17).
+//            On Bạch's machine even the plain drive-model query fails,
+//            so the storage driver itself (likely RAID mode) is refusing
+//            direct queries; --dump now lists every path's reason.
 //   Disk util = 100 - PDH \PhysicalDisk(*)\% Idle Time on the Windows drive
 //   CPU temp = PawnIO MSR/SMN when the PawnIO driver is already installed
 //            (pio_temp), else PDH \Thermal Zone Information(*)\Temperature
@@ -79,6 +83,8 @@ namespace BatteryBar
         int diskNumber = -1;
         string diskModel;
         bool diskModelTried;
+        bool wmiSmartTried, wmiSmartOk;
+        string wmiSmartWhy = "";
 
         // --- PawnIO (tried once) ---
         const uint IoctlPioLoad = 0xA1B22084;
@@ -585,12 +591,12 @@ namespace BatteryBar
                     try
                     {
                         Marshal.Copy(q, 0, inPtr, 8);
-                        if (!SysNative.DeviceIoControl(diskHandle, 0x002D1400, inPtr, 8, h.AddrOfPinnedObject(), (uint)b.Length, out outLen, IntPtr.Zero)) return SsdTempFallback(out temp);
+                        if (!SysNative.DeviceIoControl(diskHandle, 0x002D1400, inPtr, 8, h.AddrOfPinnedObject(), (uint)b.Length, out outLen, IntPtr.Zero)) { ssdTempWhy = "property refused"; return SsdTempFallback(out temp); }
                     }
                     finally { Marshal.FreeHGlobal(inPtr); }
                 }
                 finally { h.Free(); }
-                if (outLen < 12) return SsdTempFallback(out temp);
+                if (outLen < 12) { ssdTempWhy = "property reply too short (outLen=" + outLen + ")"; return SsdTempFallback(out temp); }
                 int count = BitConverter.ToUInt16(b, 10);
                 int entrySize = Marshal.SizeOf(typeof(SysNative.TempInfo));
                 int mx = -1000;
@@ -602,16 +608,74 @@ namespace BatteryBar
                     if (t > mx) mx = t;
                 }
                 if (mx > 0 && mx < 150) { temp = mx; ssdTempWhy = ""; return true; }
+                ssdTempWhy = count == 0 ? "property: no sensors" : "property: temp out of range";
                 return SsdTempFallback(out temp);
             }
-            catch { return SsdTempFallback(out temp); }
+            catch { ssdTempWhy = "property exception"; return SsdTempFallback(out temp); }
         }
 
-        // NVMe log first, then classic ATA SMART: whichever answers.
+        // NVMe log, then classic ATA SMART, then WMI SMART: whichever
+        // answers. The dump line lists every path's reason, so a failure
+        // says exactly which doors are closed.
         bool SsdTempFallback(out double temp)
         {
+            string why = ssdTempWhy; // property-path reason (may be "")
             if (NvmeSsdTemp(out temp)) return true;
-            return AtaSsdTemp(out temp);
+            if (why.Length > 0) why += "; ";
+            why += "NVMe: " + ssdTempWhy;
+            if (AtaSsdTemp(out temp)) return true;
+            why += "; ATA: " + ssdTempWhy;
+            if (WmiSsdTemp(out temp)) return true;
+            ssdTempWhy = why + "; WMI: " + ssdTempWhy;
+            return false;
+        }
+
+        // WMI SMART (root\WMI, MSStorageDriver_ATAPISmartData): a different
+        // channel from the IOCTLs above — some drivers that refuse direct
+        // queries still publish SMART data here. A dead WMI path is
+        // remembered after the first attempt, so it costs nothing per poll.
+        bool WmiSsdTemp(out double temp)
+        {
+            temp = 0;
+            if (wmiSmartTried && !wmiSmartOk) { ssdTempWhy = wmiSmartWhy; return false; }
+            wmiSmartTried = true;
+            wmiSmartWhy = "WMI SMART: no temp attribute";
+            try
+            {
+                using (var searcher = new ManagementObjectSearcher(@"root\WMI", "SELECT VendorSpecific FROM MSStorageDriver_ATAPISmartData"))
+                using (var results = searcher.Get())
+                {
+                    foreach (ManagementObject obj in results)
+                    {
+                        byte[] data = obj["VendorSpecific"] as byte[];
+                        if (data == null || data.Length < 2 + 12) continue;
+                        for (int i = 0; i < 30; i++)
+                        {
+                            int off = 2 + i * 12;
+                            if (off + 12 > data.Length) break;
+                            byte id = data[off];
+                            if (id == 0) break;
+                            if (id == 0xC2 || id == 0xBE)
+                            {
+                                wmiSmartOk = true;
+                                int t = data[off + 5];
+                                if (t > 0 && t < 120) { temp = t; ssdTempWhy = ""; return true; }
+                                wmiSmartWhy = "WMI SMART: temp out of range";
+                                ssdTempWhy = wmiSmartWhy;
+                                return false;
+                            }
+                        }
+                    }
+                }
+                ssdTempWhy = wmiSmartWhy;
+                return false;
+            }
+            catch (Exception e)
+            {
+                wmiSmartWhy = "WMI SMART failed (" + e.GetType().Name + ")";
+                ssdTempWhy = wmiSmartWhy;
+                return false;
+            }
         }
 
         // Classic ATA SMART (SMART_RCV_DRIVE_DATA): the fallback for SATA
@@ -693,12 +757,12 @@ namespace BatteryBar
                     try
                     {
                         Marshal.Copy(q, 0, inPtr, 8);
-                        if (!SysNative.DeviceIoControl(diskHandle, 0x002D1400, inPtr, 8, h.AddrOfPinnedObject(), (uint)b.Length, out outLen, IntPtr.Zero)) return diskModel;
+                        if (!SysNative.DeviceIoControl(diskHandle, 0x002D1400, inPtr, 8, h.AddrOfPinnedObject(), (uint)b.Length, out outLen, IntPtr.Zero)) { diskModel = "unknown (query refused)"; return diskModel; }
                     }
                     finally { Marshal.FreeHGlobal(inPtr); }
                 }
                 finally { h.Free(); }
-                if (outLen < 36) return diskModel;
+                if (outLen < 36) { diskModel = "unknown (short reply outLen=" + outLen + ")"; return diskModel; }
                 int vOff = BitConverter.ToInt32(b, 12);
                 int pOff = BitConverter.ToInt32(b, 16);
                 string model = (ReadAscii(b, vOff) + " " + ReadAscii(b, pOff)).Trim();

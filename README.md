@@ -1,4 +1,4 @@
-# Taskbar Widget 1.2.16
+# Taskbar Widget 1.2.17
 
 Một exe duy nhất trên taskbar Windows, gộp hai phần mềm:
 
@@ -16,6 +16,17 @@ Ví dụ trên taskbar (đề mục hệ thống in đậm, các mục cách nha
 ```
 CPU 12% 54° 20W | GPU 4% 44° 120W | RAM 61% 9.8/16.0 GB | VRAM 6% 0.5/8.0 GB | Disk 12% | SSD 38° | NET ↓1.2M ↑320K        [🎧 30%] | [📱 78%] | [🖱 93%]
 ```
+
+## Có gì mới trong 1.2.17
+
+- **Nhiệt độ SSD, đường đọc thứ tư:** trên máy Bạch cả ba đường
+  trực tiếp đều bị từ chối (`ATA SMART refused`, đến cả truy vấn
+  tên ổ cũng thất bại), nên thêm đường đọc qua WMI
+  (`MSStorageDriver_ATAPISmartData`) — kênh khác hẳn ba đường
+  trên, có driver chặn IOCTL trực tiếp nhưng vẫn công bố dữ liệu
+  SMART qua WMI. Đường WMI chết thì chỉ thử một lần rồi thôi, để
+  không tốn tài nguyên mỗi chu kỳ. `--dump` giờ liệt kê lý do của
+  từng đường đọc, thay vì chỉ đường cuối cùng.
 
 ## Có gì mới trong 1.2.16
 
