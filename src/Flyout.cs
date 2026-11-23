@@ -343,9 +343,9 @@ namespace BatteryBar
             // Each cluster has its own show / position / refresh controls;
             // Text size, Offset and Start with Windows apply to both.
             Section(g, ref y, "Bluetooth");
-            Toggle(g, y, "Show Bluetooth devices", S.ShowBluetooth, () => { S.ShowBluetooth = !S.ShowBluetooth; });
+            Toggle(g, y, "Show Bluetooth Devices", S.ShowBluetooth, () => { S.ShowBluetooth = !S.ShowBluetooth; });
             y += SetH;
-            Toggle(g, y, "Show Bluetooth Devices Position", S.BtLeft, () => { S.BtLeft = !S.BtLeft; });
+            Toggle(g, y, "Show Bluetooth Devices On the Left", S.BtLeft, () => { S.BtLeft = !S.BtLeft; });
             y += SetH;
             int ii = Array.IndexOf(Intervals, S.Interval);
             Stepper(g, y, "Check every", S.Interval < 60 ? S.Interval + " sec" : S.Interval / 60 + " min",
@@ -358,7 +358,7 @@ namespace BatteryBar
             Section(g, ref y, "System");
             Toggle(g, y, "Show System", S.ShowSystem, () => { S.ShowSystem = !S.ShowSystem; });
             y += SetH;
-            Toggle(g, y, "Show System Position", S.SysLeft, () => { S.SysLeft = !S.SysLeft; });
+            Toggle(g, y, "Show System On the Left", S.SysLeft, () => { S.SysLeft = !S.SysLeft; });
             y += SetH;
             int si = Array.IndexOf(SysIntervals, S.SysInterval);
             Stepper(g, y, "System refresh", S.SysInterval + " sec",
