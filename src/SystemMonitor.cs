@@ -23,7 +23,11 @@
 //            Intel unit 0x606 / energy 0x611, AMD 0xC0010299 /
 //            0xC001029B; watts = energy delta / time (new in 1.2.7).
 //   GPU temp = D3DKMT ADAPTERPERFDATA (Temperature/10) first — works for
-//            AMD, NVIDIA and Intel — then NVML (read_gpu_temp). GPU power
+//            AMD, NVIDIA and Intel — then ADL PMLog edge (sensor 8) / GFX
+//            (sensor 28) temperature, then NVML (read_gpu_temp). The ADL
+//            fallback is for AMD APUs whose D3DKMT temperature goes quiet
+//            (new in 1.2.18) — same fallback LibreHardwareMonitor uses,
+//            since some APUs expose GFX temp without edge temp. GPU power
 //            = NVML, else ADL PMLog board/ASIC power (watts), else D3DKMT
 //            Power/10. GPU clocks = NVML, else ADL PMLog sensors 1 (GPU)
 //            / 2 (VRAM). On AMD APUs D3DKMT's Power field is a fixed
@@ -113,6 +117,9 @@ namespace BatteryBar
         bool kmtTried, kmtOk;
         uint kmtAdapter;
         string gpuTempWhy = "";
+        string kmtWhy = "";
+        string adlTempWhy = "";
+        string gpuTempSrc = "";
         string ssdTempWhy = "";
         string gpuPowerSrc = "";
 
@@ -200,7 +207,7 @@ namespace BatteryBar
                     string gvalue = gi + "%" + (hasGpuTemp ? " " + (int)Math.Round(gpuTemp) + "°" : "");
                     string hot = hasGpuTemp ? TempNote(gpuTemp, 80, 90) : null;
                     list.Add(Make("sys:gpu", "GPU usage", "gpu", gi, gtext, gvalue, hot ?? GpuName(), false));
-                    log.AppendLine("  gpu: " + gpu.ToString("F1") + "%" + (hasGpuTemp ? " " + gpuTemp.ToString("F0") + "C" : " (no temp: " + gpuTempWhy + ")") + (GpuName() == null ? "" : " (" + GpuName() + ")"));
+                    log.AppendLine("  gpu: " + gpu.ToString("F1") + "%" + (hasGpuTemp ? " " + gpuTemp.ToString("F0") + "C (" + gpuTempSrc + ")" : " (no temp: " + gpuTempWhy + ")") + (GpuName() == null ? "" : " (" + GpuName() + ")"));
                 }
                 double vramUsed;
                 double vramPct;
@@ -1041,17 +1048,44 @@ namespace BatteryBar
             try
             {
                 // TraySense's read_gpu_temp order: D3DKMT first (AMD, Intel,
-                // NVIDIA on Windows 10+), then NVML (NVIDIA only).
-                if (KmtTemp(out temp)) { gpuTempWhy = ""; return true; }
+                // NVIDIA on Windows 10+), then ADL PMLog (AMD APUs whose
+                // D3DKMT temperature goes quiet), then NVML (NVIDIA only).
+                if (KmtTemp(out temp)) { gpuTempWhy = ""; gpuTempSrc = "D3DKMT"; return true; }
+                if (AdlTemp(out temp)) { gpuTempWhy = ""; gpuTempSrc = "ADL"; return true; }
                 if (NvmlInit() && nvmlTemp != null)
                 {
                     uint t = 0;
-                    if (nvmlTemp(nvmlDev, 0, ref t) == 0 && t != 0) { temp = t; gpuTempWhy = ""; return true; }
+                    if (nvmlTemp(nvmlDev, 0, ref t) == 0 && t != 0) { temp = t; gpuTempWhy = ""; gpuTempSrc = "NVML"; return true; }
                 }
-                gpuTempWhy = (kmtOk ? "D3DKMT: no sensor" : "D3DKMT: no adapter") + "; NVML: " + (nvmlDev == IntPtr.Zero ? "unavailable" : "no reading");
+                gpuTempWhy = (kmtOk ? "D3DKMT: " + kmtWhy : "D3DKMT: no adapter") + "; ADL: " + adlTempWhy + "; NVML: " + (nvmlDev == IntPtr.Zero ? "unavailable" : "no reading");
                 return false;
             }
             catch { gpuTempWhy = "exception"; return false; }
+        }
+
+        // AMD GPU temperature via ADL PMLog: sensor 8 = edge, 28 = GFX.
+        // Some APUs expose the GFX temperature without the edge one, so
+        // try both — the same fallback LibreHardwareMonitor uses. Values
+        // are °C directly. Shares the per-poll ADL query with power and
+        // clocks, so this adds no driver call.
+        bool AdlTemp(out double temp)
+        {
+            temp = 0;
+            adlTempWhy = "unavailable";
+            try
+            {
+                if (!AdlInit()) return false;
+                if (!AdlQuery(adlIndex)) { adlTempWhy = "query failed"; return false; }
+                bool sup;
+                foreach (int sensor in new[] { 8, 28 })
+                {
+                    int v = AdlSensor(sensor, out sup);
+                    if (sup && v > 0 && v < 150) { temp = v; adlTempWhy = ""; return true; }
+                }
+                adlTempWhy = "no temp sensor";
+                return false;
+            }
+            catch { adlTempWhy = "exception"; return false; }
         }
 
         bool GpuPower(out double watts)
@@ -1255,7 +1289,7 @@ namespace BatteryBar
             {
                 Marshal.StructureToPtr(p, buf, false);
                 var q = new SysNative.KmtQai { Adapter = kmtAdapter, Type = 62, Data = buf, Size = (uint)size };
-                if (SysNative.D3DKMTQueryAdapterInfo(ref q) != 0) return false;
+                if (SysNative.D3DKMTQueryAdapterInfo(ref q) != 0) { kmtWhy = "query failed"; return false; }
                 p = (SysNative.KmtPerf)Marshal.PtrToStructure(buf, typeof(SysNative.KmtPerf));
                 return true;
             }
@@ -1269,11 +1303,14 @@ namespace BatteryBar
             try
             {
                 SysNative.KmtPerf p;
-                if (!KmtPerf(out p) || p.Temperature == 0) return false;
+                if (!KmtPerf(out p)) return false;
+                if (p.Temperature == 0) { kmtWhy = "temp 0"; return false; }
                 temp = p.Temperature / 10.0;
-                return temp > 0 && temp < 150;
+                if (temp <= 0 || temp >= 150) { kmtWhy = "temp out of range"; return false; }
+                kmtWhy = "";
+                return true;
             }
-            catch { return false; }
+            catch { kmtWhy = "exception"; return false; }
         }
     }
 

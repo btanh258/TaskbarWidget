@@ -1,4 +1,4 @@
-# Taskbar Widget 1.2.17
+# Taskbar Widget 1.2.18
 
 Một exe duy nhất trên taskbar Windows, gộp hai phần mềm:
 
@@ -16,6 +16,19 @@ Ví dụ trên taskbar (đề mục hệ thống in đậm, các mục cách nha
 ```
 CPU 12% 54° 20W | GPU 4% 44° 120W | RAM 61% 9.8/16.0 GB | VRAM 6% 0.5/8.0 GB | Disk 12% | SSD 38° | NET ↓1.2M ↑320K        [🎧 30%] | [📱 78%] | [🖱 93%]
 ```
+
+## Có gì mới trong 1.2.18
+
+- **Nhiệt độ GPU, đường đọc dự phòng qua ADL:** nhiệt độ GPU qua
+  D3DKMT bỗng im bặt trên máy Bạch (hai lần `--dump` liên tiếp đều
+  báo `D3DKMT: no sensor`, trong khi trước đó vẫn hiện 52–63°),
+  nên thêm đường đọc qua ADL PMLog — cảm biến nhiệt edge (số 8),
+  dự phòng cảm biến GFX (số 28) vì một số APU chỉ công bố GFX mà
+  không có edge (cùng cách LibreHardwareMonitor dùng). Thứ tự đọc
+  giờ là D3DKMT → ADL → NVML, và vẫn dùng chung một lần đọc ADL
+  mỗi chu kỳ với công suất + xung nhịp nên không tốn thêm gì.
+  `--dump` giờ ghi rõ nguồn nhiệt độ GPU (`52C (ADL)`) và lý do
+  chi tiết khi không đọc được (`query failed` / `temp 0` / …).
 
 ## Có gì mới trong 1.2.17
 
