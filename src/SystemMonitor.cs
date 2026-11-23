@@ -9,7 +9,8 @@
 //   SSD temp = IOCTL_STORAGE_QUERY_PROPERTY on the Windows drive (read_disk):
 //            StorageDeviceTemperatureProperty first, else the NVMe SMART
 //            log page 2 (composite temp, Kelvin) — the property stays empty
-//            on many NVMe drives, notably in mini PCs (new in 1.2.14).
+//            on many NVMe drives, notably in mini PCs (new in 1.2.14) —
+//            else classic ATA SMART attribute 0xC2/0xBE (new in 1.2.16).
 //   Disk util = 100 - PDH \PhysicalDisk(*)\% Idle Time on the Windows drive
 //   CPU temp = PawnIO MSR/SMN when the PawnIO driver is already installed
 //            (pio_temp), else PDH \Thermal Zone Information(*)\Temperature
@@ -75,6 +76,9 @@ namespace BatteryBar
         // --- SSD temp (Windows drive handle, opened once) ---
         IntPtr diskHandle = IntPtr.Zero;
         bool diskHandleTried;
+        int diskNumber = -1;
+        string diskModel;
+        bool diskModelTried;
 
         // --- PawnIO (tried once) ---
         const uint IoctlPioLoad = 0xA1B22084;
@@ -212,6 +216,7 @@ namespace BatteryBar
                     log.AppendLine("  ssd temp: " + t.ToString("F0") + "C");
                 }
                 else log.AppendLine("  ssd temp: unavailable (" + ssdTempWhy + ")");
+                log.AppendLine("  drive: " + DiskModel());
                 double disk = DiskBusy();
                 if (disk >= 0)
                 {
@@ -558,6 +563,7 @@ namespace BatteryBar
                                 if (SysNative.DeviceIoControl(vol, 0x00560000, IntPtr.Zero, 0, hb.AddrOfPinnedObject(), (uint)buf.Length, out got, IntPtr.Zero) && got >= 8)
                                 {
                                     uint num = BitConverter.ToUInt32(buf, 4);
+                                    diskNumber = (int)num;
                                     diskHandle = SysNative.CreateFile(@"\\.\PhysicalDrive" + num, 0, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
                                 }
                             }
@@ -579,12 +585,12 @@ namespace BatteryBar
                     try
                     {
                         Marshal.Copy(q, 0, inPtr, 8);
-                        if (!SysNative.DeviceIoControl(diskHandle, 0x002D1400, inPtr, 8, h.AddrOfPinnedObject(), (uint)b.Length, out outLen, IntPtr.Zero)) return NvmeSsdTemp(out temp);
+                        if (!SysNative.DeviceIoControl(diskHandle, 0x002D1400, inPtr, 8, h.AddrOfPinnedObject(), (uint)b.Length, out outLen, IntPtr.Zero)) return SsdTempFallback(out temp);
                     }
                     finally { Marshal.FreeHGlobal(inPtr); }
                 }
                 finally { h.Free(); }
-                if (outLen < 12) return NvmeSsdTemp(out temp);
+                if (outLen < 12) return SsdTempFallback(out temp);
                 int count = BitConverter.ToUInt16(b, 10);
                 int entrySize = Marshal.SizeOf(typeof(SysNative.TempInfo));
                 int mx = -1000;
@@ -596,9 +602,118 @@ namespace BatteryBar
                     if (t > mx) mx = t;
                 }
                 if (mx > 0 && mx < 150) { temp = mx; ssdTempWhy = ""; return true; }
-                return NvmeSsdTemp(out temp);
+                return SsdTempFallback(out temp);
             }
-            catch { return NvmeSsdTemp(out temp); }
+            catch { return SsdTempFallback(out temp); }
+        }
+
+        // NVMe log first, then classic ATA SMART: whichever answers.
+        bool SsdTempFallback(out double temp)
+        {
+            if (NvmeSsdTemp(out temp)) return true;
+            return AtaSsdTemp(out temp);
+        }
+
+        // Classic ATA SMART (SMART_RCV_DRIVE_DATA): the fallback for SATA
+        // SSDs, which answer neither the temperature property nor the NVMe
+        // log. Reads attribute 0xC2 (temperature), else 0xBE.
+        bool AtaSsdTemp(out double temp)
+        {
+            temp = 0;
+            ssdTempWhy = "ATA SMART refused";
+            try
+            {
+                if (diskHandle == IntPtr.Zero || diskHandle == new IntPtr(-1) || diskNumber < 0) { ssdTempWhy = "no drive handle"; return false; }
+                // SENDCMDINPARAMS: cBufferSize + IDEREGS + drive number.
+                byte[] q = new byte[32];
+                Array.Copy(BitConverter.GetBytes(512u), 0, q, 0, 4);
+                q[4] = 0xD0; // SMART READ DATA
+                q[5] = 1;
+                q[6] = 1;
+                q[7] = 0x4F;
+                q[8] = 0xC2;
+                q[9] = (byte)(0xA0 | (diskNumber << 4));
+                q[10] = 0xB0; // SMART
+                q[12] = (byte)diskNumber;
+                // SENDCMDOUTPARAMS (16) + 512 bytes of SMART data.
+                byte[] b = new byte[16 + 512];
+                uint outLen;
+                GCHandle h = GCHandle.Alloc(b, GCHandleType.Pinned);
+                try
+                {
+                    IntPtr inPtr = Marshal.AllocHGlobal(32);
+                    try
+                    {
+                        Marshal.Copy(q, 0, inPtr, 32);
+                        if (!SysNative.DeviceIoControl(diskHandle, 0x0007C088, inPtr, 32, h.AddrOfPinnedObject(), (uint)b.Length, out outLen, IntPtr.Zero)) return false;
+                    }
+                    finally { Marshal.FreeHGlobal(inPtr); }
+                }
+                finally { h.Free(); }
+                if (outLen < 16 + 512) { ssdTempWhy = "ATA SMART reply too short (outLen=" + outLen + ")"; return false; }
+                if (b[4] != 0) { ssdTempWhy = "ATA SMART driver error"; return false; }
+                // SMART data: 2-byte revision, then 12-byte attributes.
+                for (int i = 0; i < 30; i++)
+                {
+                    int off = 16 + 2 + i * 12;
+                    byte id = b[off];
+                    if (id == 0) break;
+                    if (id == 0xC2 || id == 0xBE)
+                    {
+                        int t = b[off + 5];
+                        if (t > 0 && t < 120) { temp = t; ssdTempWhy = ""; return true; }
+                    }
+                }
+                ssdTempWhy = "ATA SMART: no temp attribute";
+                return false;
+            }
+            catch { ssdTempWhy = "exception"; return false; }
+        }
+
+        // Drive model for --dump (cached): StorageDeviceProperty on the
+        // same physical-drive handle. Tells us NVMe vs SATA when the
+        // temperature paths disagree with the drive.
+        string DiskModel()
+        {
+            if (diskModelTried) return diskModel ?? "unknown";
+            diskModelTried = true;
+            diskModel = "unknown";
+            try
+            {
+                if (diskHandle == IntPtr.Zero || diskHandle == new IntPtr(-1)) return diskModel;
+                byte[] q = new byte[8];
+                Array.Copy(BitConverter.GetBytes(0u), 0, q, 0, 4); // StorageDeviceProperty
+                Array.Copy(BitConverter.GetBytes(0u), 0, q, 4, 4); // PropertyStandardQuery
+                byte[] b = new byte[1024];
+                uint outLen;
+                GCHandle h = GCHandle.Alloc(b, GCHandleType.Pinned);
+                try
+                {
+                    IntPtr inPtr = Marshal.AllocHGlobal(8);
+                    try
+                    {
+                        Marshal.Copy(q, 0, inPtr, 8);
+                        if (!SysNative.DeviceIoControl(diskHandle, 0x002D1400, inPtr, 8, h.AddrOfPinnedObject(), (uint)b.Length, out outLen, IntPtr.Zero)) return diskModel;
+                    }
+                    finally { Marshal.FreeHGlobal(inPtr); }
+                }
+                finally { h.Free(); }
+                if (outLen < 36) return diskModel;
+                int vOff = BitConverter.ToInt32(b, 12);
+                int pOff = BitConverter.ToInt32(b, 16);
+                string model = (ReadAscii(b, vOff) + " " + ReadAscii(b, pOff)).Trim();
+                if (model.Length > 0) diskModel = model;
+                return diskModel;
+            }
+            catch { return diskModel ?? "unknown"; }
+        }
+
+        static string ReadAscii(byte[] b, int off)
+        {
+            if (off <= 0 || off >= b.Length) return "";
+            int end = off;
+            while (end < b.Length && b[end] != 0) end++;
+            try { return Encoding.ASCII.GetString(b, off, end - off).Trim(); } catch { return ""; }
         }
 
         // NVMe SMART log (log page 2) via IOCTL_STORAGE_QUERY_PROPERTY:

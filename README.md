@@ -1,4 +1,4 @@
-# Taskbar Widget 1.2.15
+# Taskbar Widget 1.2.16
 
 Một exe duy nhất trên taskbar Windows, gộp hai phần mềm:
 
@@ -16,6 +16,17 @@ Ví dụ trên taskbar (đề mục hệ thống in đậm, các mục cách nha
 ```
 CPU 12% 54° 20W | GPU 4% 44° 120W | RAM 61% 9.8/16.0 GB | VRAM 6% 0.5/8.0 GB | Disk 12% | SSD 38° | NET ↓1.2M ↑320K        [🎧 30%] | [📱 78%] | [🖱 93%]
 ```
+
+## Có gì mới trong 1.2.16
+
+- **Nhiệt độ SSD, đường đọc thứ ba:** trên máy Bạch driver NVMe
+  chỉ trả về 12 byte rỗng cho truy vấn log SMART (`outLen=12`),
+  nên thêm đường đọc SMART cổ điển của ổ ATA/SATA
+  (`SMART_RCV_DRIVE_DATA`, thuộc tính nhiệt độ 0xC2, dự phòng
+  0xBE). Thứ tự thử giờ là: thuộc tính nhiệt độ của Windows →
+  nhật ký SMART NVMe → SMART ATA. `--dump` cũng ghi thêm dòng
+  `drive:` với tên ổ, để biết chắc ổ đó là NVMe hay SATA khi
+  các đường đọc không khớp.
 
 ## Có gì mới trong 1.2.15
 

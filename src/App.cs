@@ -11,7 +11,7 @@ namespace BatteryBar
 {
     static class Program
     {
-        public const string Version = "1.2.15";
+        public const string Version = "1.2.16";
         public const string Repo = "https://github.com/btanh258/TaskbarWidget";
         const string MutexName = "TaskbarWidget.Single";
         public const string ShowEvent = "TaskbarWidget.ShowSettings";
