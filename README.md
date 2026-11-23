@@ -1,4 +1,4 @@
-# Taskbar Widget 1.2.18
+# Taskbar Widget 1.2.19
 
 Một exe duy nhất trên taskbar Windows, gộp hai phần mềm:
 
@@ -16,6 +16,17 @@ Ví dụ trên taskbar (đề mục hệ thống in đậm, các mục cách nha
 ```
 CPU 12% 54° 20W | GPU 4% 44° 120W | RAM 61% 9.8/16.0 GB | VRAM 6% 0.5/8.0 GB | Disk 12% | SSD 38° | NET ↓1.2M ↑320K        [🎧 30%] | [📱 78%] | [🖱 93%]
 ```
+
+## Có gì mới trong 1.2.19
+
+- **Tự cài driver PawnIO:** trên máy mới chưa có PawnIO thì nhiệt
+  độ và công suất CPU không đọc được — giờ app tự lo. Khi mục CPU
+  đang hiện mà driver chưa có, app hỏi một lần sau khi khởi động
+  (từ chối thì không hỏi lại); nút `Install PawnIO driver` trong
+  Settings để cài lại bất cứ lúc nào. App tải file cài chính thức
+  `PawnIO_setup.exe 2.2.0` từ GitHub, kiểm tra mã SHA-256 khớp mới
+  chạy (cùng cách TraySense gốc làm), cần quyền admin nên sẽ hiện
+  bảng UAC một lần, cài xong app tự mở lại bình thường.
 
 ## Có gì mới trong 1.2.18
 

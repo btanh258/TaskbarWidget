@@ -11,7 +11,7 @@ namespace BatteryBar
 {
     static class Program
     {
-        public const string Version = "1.2.18";
+        public const string Version = "1.2.19";
         public const string Repo = "https://github.com/btanh258/TaskbarWidget";
         const string MutexName = "TaskbarWidget.Single";
         public const string ShowEvent = "TaskbarWidget.ShowSettings";
@@ -33,6 +33,24 @@ namespace BatteryBar
                 var sys = new SystemMonitor();
                 sys.Poll();
                 File.WriteAllText(args[1], p.Log + "\r\n" + sys.Log);
+                return;
+            }
+            // TaskbarWidget.exe /install-pawnio : the elevated copy installs
+            // the PawnIO driver, then restarts the app unelevated and exits.
+            // It runs before the single-instance mutex so the install never
+            // fights the running copy.
+            if (args.Contains("/install-pawnio"))
+            {
+                if (PawnIo.IsAdmin())
+                {
+                    if (!PawnIo.Present())
+                    {
+                        string why;
+                        if (!PawnIo.Install(out why))
+                            MessageBox.Show(why, "Taskbar Widget – PawnIO", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
+                    PawnIo.RestartUnelevated();
+                }
                 return;
             }
             Application.EnableVisualStyles();
@@ -152,6 +170,7 @@ namespace BatteryBar
         public int Offset = 0;         // extra px to the left of the tray
         public bool PercentSign = true;
         public bool AutoUpdate = true; // check GitHub releases for updates
+        public bool AskPawnIo = true; // offer the PawnIO driver install once (1.2.19)
         public readonly HashSet<string> Hidden = new HashSet<string>();
         public readonly Dictionary<string, string> Kind = new Dictionary<string, string>();
         public readonly Dictionary<string, string> Names = new Dictionary<string, string>();
@@ -187,6 +206,7 @@ namespace BatteryBar
                         case "offset": s.Offset = int.Parse(p[1]); break;
                         case "percent": s.PercentSign = p[1] == "1"; break;
                         case "update": s.AutoUpdate = p[1] == "1"; break;
+                        case "pioask": s.AskPawnIo = p[1] == "1"; break;
                         case "hide": s.Hidden.Add(p[1]); break;
                         case "kind": if (p.Length > 2) s.Kind[p[1]] = p[2]; break;
                         case "name": if (p.Length > 2) s.Names[p[1]] = p[2]; break;
@@ -229,6 +249,7 @@ namespace BatteryBar
                 lines.Add("offset\t" + Offset);
                 lines.Add("percent\t" + (PercentSign ? "1" : "0"));
                 lines.Add("update\t" + (AutoUpdate ? "1" : "0"));
+                lines.Add("pioask\t" + (AskPawnIo ? "1" : "0"));
                 foreach (var h in Hidden) lines.Add("hide\t" + h);
                 foreach (var k in Kind) lines.Add("kind\t" + k.Key + "\t" + k.Value);
                 foreach (var n in Names) lines.Add("name\t" + n.Key + "\t" + n.Value);
@@ -283,6 +304,18 @@ namespace BatteryBar
 
             Updater.Start(this);
 
+            // PawnIO: if CPU temperature/power are wanted but the driver is
+            // missing, offer to install it once, shortly after startup
+            // (TraySense asked the same way when CPU temp was enabled).
+            var pioTimer = new System.Windows.Forms.Timer();
+            pioTimer.Interval = 8000;
+            pioTimer.Tick += delegate
+            {
+                pioTimer.Stop();
+                MaybeAskPawnIo();
+            };
+            pioTimer.Start();
+
             if (welcome) ShowSettings();
             if (Environment.GetCommandLineArgs().Contains("--demo-settings")) { form = new Flyout(this); form.Open(true); }
         }
@@ -290,6 +323,30 @@ namespace BatteryBar
         public void Refresh() { wake.Set(); sysWake.Set(); }
         public void RefreshSystem() { sysWake.Set(); }
         public void UiBeginInvoke(Action a) { try { ui.BeginInvoke(a); } catch { } }
+
+        void MaybeAskPawnIo()
+        {
+            if (Poller.Demo) return;
+            if (!Settings.AskPawnIo) return;
+            if (!Settings.ShowSystem || Settings.Hidden.Contains("sys:cpu")) return;
+            if (PawnIo.Present()) return;
+            AskPawnIoInstall();
+        }
+
+        // The Settings pill calls this directly; the startup check goes
+        // through MaybeAskPawnIo so a decline is only asked once.
+        public void AskPawnIoInstall()
+        {
+            if (PawnIo.Present()) return;
+            var r = MessageBox.Show(
+                "Taskbar Widget needs the PawnIO driver to read CPU temperature and CPU power.\n\n" +
+                "PawnIO is a small, signed, open-source driver (the one LibreHardwareMonitor uses). " +
+                "It is downloaded from GitHub and verified before it runs, and can be removed any time from Settings > Apps.\n\n" +
+                "Windows will ask for permission. Install it now?",
+                "Taskbar Widget – CPU temperature", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (r != DialogResult.Yes) { Settings.AskPawnIo = false; Settings.Save(); return; }
+            if (PawnIo.RelaunchAdmin("/install-pawnio")) ExitThread();
+        }
 
         void SystemLoop()
         {

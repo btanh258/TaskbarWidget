@@ -141,8 +141,9 @@ namespace BatteryBar
         void Relayout()
         {
             float h;
-            // Settings: 11 rows in 3 sections (Bluetooth 4, System 3, General 4).
-            if (settingsPage) h = Header + SetH * 11 + SecH * 3 + 12 + 40 + 8 + 40 + 8 + 40 + Pad;
+            // Settings: 11 rows in 3 sections (Bluetooth 4, System 3, General 4),
+            // plus an "Install PawnIO driver" pill when the driver is missing.
+            if (settingsPage) h = Header + SetH * 11 + SecH * 3 + 12 + 40 + 8 + 40 + 8 + 40 + (PawnIo.Present() ? 0 : 48) + Pad;
             else
             {
                 var rows = Rows();
@@ -392,6 +393,11 @@ namespace BatteryBar
                 app.Updater.CheckNow(s => { try { BeginInvoke(new Action(() => ShowToast(s))); } catch { } });
             });
             y += 48;
+            if (!PawnIo.Present())
+            {
+                Pill(g, Rf(Pad, y, W - 2 * Pad, 36), "Install PawnIO driver", () => app.AskPawnIoInstall());
+                y += 48;
+            }
             Pill(g, Rf(Pad, y, W - 2 * Pad, 36), toast ?? ("Quit Taskbar Widget  ·  v" + Program.Version), () => app.ExitThread());
         }
 
