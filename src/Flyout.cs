@@ -142,9 +142,9 @@ namespace BatteryBar
         void Relayout()
         {
             float h;
-            // Settings: 11 rows in 3 sections (Bluetooth 4, System 3, General 4),
+            // Settings: 12 rows in 3 sections (Bluetooth 4, System 3, General 5),
             // plus an "Install PawnIO driver" pill when the driver is missing.
-            if (settingsPage) h = Header + SetH * 11 + SecH * 3 + 12 + 40 + 8 + 40 + 8 + 40 + (PawnIo.Present() ? 0 : 48) + Pad;
+            if (settingsPage) h = Header + SetH * 12 + SecH * 3 + 12 + 40 + 8 + 40 + 8 + 40 + (PawnIo.Present() ? 0 : 48) + Pad;
             else
             {
                 var rows = Rows();
@@ -372,8 +372,10 @@ namespace BatteryBar
             y += SetH;
             Stepper(g, y, "Offset", S.Offset + " px", () => { S.Offset -= 10; }, () => { S.Offset += 10; });
             y += SetH;
-            bool startup = Installer.StartupEnabled();
-            Toggle(g, y, "Start with Windows", startup, () => Installer.SetStartup(!startup, Application.ExecutablePath));
+            bool startup = Installer.StartupEnabled() || Installer.AdminTaskOn;
+            Toggle(g, y, "Start with Windows", startup, () => app.ApplyStartup(!startup));
+            y += SetH;
+            Toggle(g, y, "Run as administrator", S.RunAsAdmin, () => app.ApplyAdminStartup(!S.RunAsAdmin));
             y += SetH;
             Toggle(g, y, "Check for updates automatically", S.AutoUpdate, () => { S.AutoUpdate = !S.AutoUpdate; });
             y += SetH + 12;

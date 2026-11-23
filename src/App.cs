@@ -11,7 +11,7 @@ namespace BatteryBar
 {
     static class Program
     {
-        public const string Version = "1.2.21";
+        public const string Version = "1.2.22";
         public const string Repo = "https://github.com/btanh258/TaskbarWidget";
         const string MutexName = "TaskbarWidget.Single";
         public const string ShowEvent = "TaskbarWidget.ShowSettings";
@@ -53,11 +53,60 @@ namespace BatteryBar
                 }
                 return;
             }
+            // TaskbarWidget.exe /apply-admin-startup : the elevated copy
+            // applies the saved "Run as administrator" setting, then
+            // takes over as the running app (admin on) or exits (admin
+            // off - the non-admin copy is still running). Runs before
+            // the single-instance mutex, like /install-pawnio.
+            if (args.Contains("/apply-admin-startup"))
+            {
+                if (PawnIo.IsAdmin())
+                {
+                    var st = Settings.Load();
+                    if (st.RunAsAdmin)
+                    {
+                        Installer.CreateAdminTask(Application.ExecutablePath);
+                        Installer.SetStartup(false, null);
+                        // Stop the running non-admin copy, then fall
+                        // through and run as the app, elevated.
+                        Program.Signal(Program.ExitEvent);
+                        for (int i = 0; i < 50 && Program.Running(); i++) Thread.Sleep(100);
+                    }
+                    else
+                    {
+                        Installer.DeleteAdminTask();
+                        Installer.SetStartup(true, Application.ExecutablePath);
+                        return;
+                    }
+                }
+            }
+            // TaskbarWidget.exe /disable-startup : the elevated copy
+            // removes all auto-start (logon task + Run key) and exits;
+            // the running copy stays.
+            if (args.Contains("/disable-startup"))
+            {
+                if (PawnIo.IsAdmin())
+                {
+                    var st = Settings.Load();
+                    st.RunAsAdmin = false;
+                    st.Save();
+                    Installer.DeleteAdminTask();
+                    Installer.SetStartup(false, null);
+                }
+                return;
+            }
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
             bool welcome = args.Contains("--welcome");
             Poller.Demo = args.Contains("--demo");
+            // "Run as administrator" is on but this copy is not elevated
+            // (task deleted, or launched by hand): re-apply it once.
+            // Declining the prompt just keeps this copy non-admin.
+            if (!Poller.Demo && Settings.Load().RunAsAdmin && !PawnIo.IsAdmin())
+            {
+                if (PawnIo.RelaunchAdmin("/apply-admin-startup")) return;
+            }
             if (!IsInstalledCopy && !args.Contains("--portable"))
             {
                 var answer = MessageBox.Show(
@@ -124,6 +173,48 @@ namespace BatteryBar
             }
         }
 
+        // "Run as administrator" auto-start: a logon task running with
+        // highest privileges, so the app starts elevated without a UAC
+        // prompt at logon (PawnIO only lets admins open its device).
+        // The task replaces the Run-key startup: two auto-starts would
+        // race for the single-instance mutex at logon. Managed through
+        // schtasks.exe (no Task Scheduler COM reference needed).
+        public static bool AdminTaskOn = false;
+
+        public static void RefreshAdminTask()
+        {
+            AdminTaskOn = RunSchTasks("/query /tn \"TaskbarWidget\"") == 0;
+        }
+
+        public static bool CreateAdminTask(string exe)
+        {
+            return RunSchTasks("/create /tn \"TaskbarWidget\" /tr \"\\\"" + exe + "\\\"\" /sc onlogon /rl highest /f") == 0;
+        }
+
+        public static bool DeleteAdminTask()
+        {
+            return RunSchTasks("/delete /tn \"TaskbarWidget\" /f") == 0;
+        }
+
+        static int RunSchTasks(string args)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo("schtasks", args);
+                psi.UseShellExecute = false;
+                psi.CreateNoWindow = true;
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
+                using (var p = Process.Start(psi))
+                {
+                    if (p == null) return -1;
+                    if (!p.WaitForExit(10000)) { try { p.Kill(); } catch { } return -1; }
+                    return p.ExitCode;
+                }
+            }
+            catch { return -1; }
+        }
+
         static void MakeShortcut()
         {
             try
@@ -143,6 +234,7 @@ namespace BatteryBar
         public static void Uninstall()
         {
             SetStartup(false, null);
+            DeleteAdminTask();
             try { File.Delete(Program.Shortcut); } catch { }
             try { Directory.Delete(Settings.Dir, true); } catch { }
             if (Directory.Exists(Program.InstallDir))
@@ -171,6 +263,7 @@ namespace BatteryBar
         public bool PercentSign = true;
         public bool AutoUpdate = true; // check GitHub releases for updates
         public bool AskPawnIo = true; // offer the PawnIO driver install once (1.2.19)
+        public bool RunAsAdmin = false; // auto-start elevated via a logon task (1.2.22)
         public readonly HashSet<string> Hidden = new HashSet<string>();
         public readonly Dictionary<string, string> Kind = new Dictionary<string, string>();
         public readonly Dictionary<string, string> Names = new Dictionary<string, string>();
@@ -209,6 +302,7 @@ namespace BatteryBar
                         case "percent": s.PercentSign = p[1] == "1"; break;
                         case "update": s.AutoUpdate = p[1] == "1"; break;
                         case "pioask": s.AskPawnIo = p[1] == "1"; break;
+                        case "admin": s.RunAsAdmin = p[1] == "1"; break;
                         case "hide": s.Hidden.Add(p[1]); break;
                         case "kind": if (p.Length > 2) s.Kind[p[1]] = p[2]; break;
                         case "name": if (p.Length > 2) s.Names[p[1]] = p[2]; break;
@@ -270,6 +364,7 @@ namespace BatteryBar
                 lines.Add("percent\t" + (PercentSign ? "1" : "0"));
                 lines.Add("update\t" + (AutoUpdate ? "1" : "0"));
                 lines.Add("pioask\t" + (AskPawnIo ? "1" : "0"));
+                lines.Add("admin\t" + (RunAsAdmin ? "1" : "0"));
                 foreach (var h in Hidden) lines.Add("hide\t" + h);
                 foreach (var k in Kind) lines.Add("kind\t" + k.Key + "\t" + k.Value);
                 foreach (var n in Names) lines.Add("name\t" + n.Key + "\t" + n.Value);
@@ -324,6 +419,8 @@ namespace BatteryBar
 
             Updater.Start(this);
 
+            Installer.RefreshAdminTask();
+
             // PawnIO: if CPU temperature/power are wanted but the driver is
             // missing, offer to install it once, shortly after startup
             // (TraySense asked the same way when CPU temp was enabled).
@@ -368,6 +465,64 @@ namespace BatteryBar
                 "Taskbar Widget – CPU temperature", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (r != DialogResult.Yes) { Settings.AskPawnIo = false; Settings.Save(); return; }
             if (PawnIo.RelaunchAdmin("/install-pawnio")) ExitThread();
+        }
+
+        // "Run as administrator": auto-start via an elevated logon task
+        // instead of the Run key, and restart this copy elevated at
+        // once so CPU temperature/power come back immediately.
+        public void ApplyAdminStartup(bool on)
+        {
+            Settings.RunAsAdmin = on;
+            Settings.Save();
+            if (on)
+            {
+                if (PawnIo.IsAdmin())
+                {
+                    Installer.CreateAdminTask(Application.ExecutablePath);
+                    Installer.SetStartup(false, null);
+                    Installer.RefreshAdminTask();
+                }
+                else if (PawnIo.RelaunchAdmin("/apply-admin-startup")) ExitThread();
+            }
+            else
+            {
+                if (PawnIo.IsAdmin())
+                {
+                    Installer.DeleteAdminTask();
+                    Installer.SetStartup(true, Application.ExecutablePath);
+                    Installer.RefreshAdminTask();
+                }
+                else if (Installer.AdminTaskOn)
+                {
+                    // Only the task needs removing; the elevated copy
+                    // deletes it, restores the Run key and exits, while
+                    // this copy keeps running non-admin.
+                    PawnIo.RelaunchAdmin("/apply-admin-startup");
+                }
+            }
+        }
+
+        // "Start with Windows": on uses the saved admin preference to
+        // pick the method (logon task or Run key); off removes both.
+        public void ApplyStartup(bool on)
+        {
+            if (!on)
+            {
+                Settings.RunAsAdmin = false;
+                Settings.Save();
+                Installer.SetStartup(false, null);
+                if (Installer.AdminTaskOn)
+                {
+                    if (PawnIo.IsAdmin()) Installer.DeleteAdminTask();
+                    else PawnIo.RelaunchAdmin("/disable-startup");
+                }
+                Installer.RefreshAdminTask();
+            }
+            else
+            {
+                ApplyAdminStartup(Settings.RunAsAdmin);
+                if (!Settings.RunAsAdmin) Installer.SetStartup(true, Application.ExecutablePath);
+            }
         }
 
         void SystemLoop()

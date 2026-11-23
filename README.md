@@ -1,4 +1,4 @@
-# Taskbar Widget 1.2.21
+# Taskbar Widget 1.2.22
 
 Một exe duy nhất trên taskbar Windows, gộp hai phần mềm:
 
@@ -16,6 +16,17 @@ Ví dụ trên taskbar (đề mục hệ thống in đậm, các mục cách nha
 ```
 CPU 12% 54° 20W | GPU 4% 44° 120W | RAM 61% 9.8/16.0 GB | VRAM 6% 0.5/8.0 GB | Disk 12% | SSD 38° | NET ↓1.2M ↑320K        [🎧 30%] | [📱 78%] | [🖱 93%]
 ```
+
+## Có gì mới trong 1.2.22
+
+- **Thêm tùy chọn "Run as administrator" trong Settings:** PawnIO
+  chỉ cho tài khoản admin mở thiết bị của nó, nên app chạy quyền
+  thường sau khi restart sẽ mất nhiệt độ + công suất CPU. Bật tùy
+  chọn này, app tự chạy với quyền admin mỗi lần đăng nhập bằng một
+  task trong Task Scheduler (quyền cao nhất, không hiện bảng UAC),
+  thay cho tự chạy bằng Run key; app cũng khởi động lại với quyền
+  admin ngay lúc bật để đọc lại được cảm biến CPU. Tắt thì quay về
+  tự chạy thường. Gỡ cài đặt cũng xóa task này.
 
 ## Có gì mới trong 1.2.21
 
