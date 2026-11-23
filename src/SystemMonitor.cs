@@ -624,6 +624,11 @@ namespace BatteryBar
                 Array.Copy(BitConverter.GetBytes(512u), 0, q, 28, 4); // ProtocolDataLength
                 byte[] b = new byte[8 + 40 + 512];
                 uint outLen;
+                // The driver needs Version/Size filled in up front:
+                // without them it answers the descriptor but returns no
+                // log data ("NVMe log too short" in --dump).
+                Array.Copy(BitConverter.GetBytes(48u), 0, b, 0, 4);  // Version
+                Array.Copy(BitConverter.GetBytes((uint)b.Length), 0, b, 4, 4); // Size
                 GCHandle h = GCHandle.Alloc(b, GCHandleType.Pinned);
                 try
                 {
@@ -636,12 +641,12 @@ namespace BatteryBar
                     finally { Marshal.FreeHGlobal(inPtr); }
                 }
                 finally { h.Free(); }
-                if (outLen < 8 + 40 + 3) { ssdTempWhy = "NVMe log too short"; return false; }
+                if (outLen < 8 + 40 + 3) { ssdTempWhy = "NVMe reply too short (outLen=" + outLen + ")"; return false; }
                 // Descriptor: Version + Size (8), then ProtocolSpecificData;
                 // ProtocolDataOffset is relative to that struct.
                 int baseOff = 8 + (int)BitConverter.ToUInt32(b, 24);
                 uint dataLen = BitConverter.ToUInt32(b, 28);
-                if (dataLen < 3 || baseOff + 3 > outLen) { ssdTempWhy = "NVMe log too short"; return false; }
+                if (dataLen < 3 || baseOff + 3 > outLen) { ssdTempWhy = "NVMe log too short (outLen=" + outLen + " dataLen=" + dataLen + " off=" + baseOff + ")"; return false; }
                 ushort kelvin = BitConverter.ToUInt16(b, baseOff + 1);
                 double c = kelvin - 273.15;
                 if (c > 0 && c < 120) { temp = c; ssdTempWhy = ""; return true; }
