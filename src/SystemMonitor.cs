@@ -6,7 +6,10 @@
 //            summed per engine, busiest engine wins   (read_gpu_usage)
 //   VRAM % = PDH \GPU Adapter Memory(*)\Dedicated Usage / DXGI total,
 //            total here from Win32_VideoController.AdapterRAM (read_vram)
-//   SSD temp = IOCTL_STORAGE_QUERY_PROPERTY on the Windows drive (read_disk)
+//   SSD temp = IOCTL_STORAGE_QUERY_PROPERTY on the Windows drive (read_disk):
+//            StorageDeviceTemperatureProperty first, else the NVMe SMART
+//            log page 2 (composite temp, Kelvin) — the property stays empty
+//            on many NVMe drives, notably in mini PCs (new in 1.2.14).
 //   Disk util = 100 - PDH \PhysicalDisk(*)\% Idle Time on the Windows drive
 //   CPU temp = PawnIO MSR/SMN when the PawnIO driver is already installed
 //            (pio_temp), else PDH \Thermal Zone Information(*)\Temperature
@@ -100,6 +103,7 @@ namespace BatteryBar
         bool kmtTried, kmtOk;
         uint kmtAdapter;
         string gpuTempWhy = "";
+        string ssdTempWhy = "";
         string gpuPowerSrc = "";
 
         // --- ADL (AMD GPU power/clocks via atiadlxx.dll) ---
@@ -132,8 +136,10 @@ namespace BatteryBar
                     list.Add(Make("sys:cpupower", "CPU power", "cpupower", 0, "CPU 20W", "20W", null, true));
                     list.Add(Make("sys:gpu", "GPU usage", "gpu", 4, "GPU 4% 44°", "4% 44°", null, false));
                     list.Add(Make("sys:gpupower", "GPU power", "gpupower", 0, "GPU 120W", "120W", null, true));
+                    list.Add(Make("sys:gpuclk", "GPU clock", "gpuclk", 0, "GPU 2100MHz", "2100MHz", null, true));
                     list.Add(Make("sys:ram", "RAM usage", "ram", 61, "RAM 61% 9.8/16.0 GB", "61%", "9.8 / 16.0 GB", false));
                     list.Add(Make("sys:vram", "VRAM usage", "vram", 6, "VRAM 6% 0.5/8.0 GB", "6%", "0.5 / 8.0 GB", false));
+                    list.Add(Make("sys:memclk", "VRAM clock", "memclk", 0, "VRAM 1800MHz", "1800MHz", null, true));
                     list.Add(Make("sys:disk", "Storage utilization", "disk", 12, "Disk 12%", "12%", null, false));
                     list.Add(Make("sys:ssd", "SSD temperature", "ssd", 38, "SSD 38°", "38°", null, true));
                     list.Add(Make("sys:net", "Network", "net", 0, "NET ↓1.2M ↑320K", "↓1.2M ↑320K", "Down 1.2 MB/s · Up 320 KB/s", true));
@@ -205,6 +211,7 @@ namespace BatteryBar
                     list.Add(Make("sys:ssd", "SSD temperature", "ssd", (int)Math.Round(t), "SSD " + (int)Math.Round(t) + "°", (int)Math.Round(t) + "°", TempNote(t, 65, 75), true));
                     log.AppendLine("  ssd temp: " + t.ToString("F0") + "C");
                 }
+                else log.AppendLine("  ssd temp: unavailable (" + ssdTempWhy + ")");
                 double disk = DiskBusy();
                 if (disk >= 0)
                 {
@@ -559,7 +566,7 @@ namespace BatteryBar
                         finally { SysNative.CloseHandle(vol); }
                     }
                 }
-                if (diskHandle == IntPtr.Zero || diskHandle == new IntPtr(-1)) return false;
+                if (diskHandle == IntPtr.Zero || diskHandle == new IntPtr(-1)) { ssdTempWhy = "no drive handle"; return false; }
                 byte[] q = new byte[8];
                 Array.Copy(BitConverter.GetBytes(6u), 0, q, 0, 4); // StorageDeviceTemperatureProperty
                 Array.Copy(BitConverter.GetBytes(0u), 0, q, 4, 4); // PropertyStandardQuery
@@ -572,12 +579,12 @@ namespace BatteryBar
                     try
                     {
                         Marshal.Copy(q, 0, inPtr, 8);
-                        if (!SysNative.DeviceIoControl(diskHandle, 0x002D1400, inPtr, 8, h.AddrOfPinnedObject(), (uint)b.Length, out outLen, IntPtr.Zero)) return false;
+                        if (!SysNative.DeviceIoControl(diskHandle, 0x002D1400, inPtr, 8, h.AddrOfPinnedObject(), (uint)b.Length, out outLen, IntPtr.Zero)) return NvmeSsdTemp(out temp);
                     }
                     finally { Marshal.FreeHGlobal(inPtr); }
                 }
                 finally { h.Free(); }
-                if (outLen < 12) return false;
+                if (outLen < 12) return NvmeSsdTemp(out temp);
                 int count = BitConverter.ToUInt16(b, 10);
                 int entrySize = Marshal.SizeOf(typeof(SysNative.TempInfo));
                 int mx = -1000;
@@ -588,10 +595,60 @@ namespace BatteryBar
                     short t = BitConverter.ToInt16(b, off + 2);
                     if (t > mx) mx = t;
                 }
-                if (mx > 0 && mx < 150) { temp = mx; return true; }
+                if (mx > 0 && mx < 150) { temp = mx; ssdTempWhy = ""; return true; }
+                return NvmeSsdTemp(out temp);
+            }
+            catch { return NvmeSsdTemp(out temp); }
+        }
+
+        // NVMe SMART log (log page 2) via IOCTL_STORAGE_QUERY_PROPERTY:
+        // the temperature property above stays empty on many NVMe drives
+        // (notably in mini PCs), while the drive always answers its SMART
+        // log. Composite temperature is log bytes 1-2, Kelvin.
+        bool NvmeSsdTemp(out double temp)
+        {
+            temp = 0;
+            ssdTempWhy = "no NVMe SMART temp";
+            try
+            {
+                if (diskHandle == IntPtr.Zero || diskHandle == new IntPtr(-1)) { ssdTempWhy = "no drive handle"; return false; }
+                // STORAGE_PROPERTY_QUERY (8) + STORAGE_PROTOCOL_SPECIFIC_DATA (40).
+                byte[] q = new byte[48];
+                Array.Copy(BitConverter.GetBytes(7u), 0, q, 0, 4);    // StorageDeviceProtocolSpecificProperty
+                Array.Copy(BitConverter.GetBytes(0u), 0, q, 4, 4);    // PropertyStandardQuery
+                Array.Copy(BitConverter.GetBytes(1u), 0, q, 8, 4);    // ProtocolTypeNvme
+                Array.Copy(BitConverter.GetBytes(2u), 0, q, 12, 4);   // NVMeDataTypeLogPage
+                Array.Copy(BitConverter.GetBytes(0x02u), 0, q, 16, 4); // SMART/Health log page
+                Array.Copy(BitConverter.GetBytes(0u), 0, q, 20, 4);   // SubValue
+                Array.Copy(BitConverter.GetBytes(40u), 0, q, 24, 4);  // ProtocolDataOffset
+                Array.Copy(BitConverter.GetBytes(512u), 0, q, 28, 4); // ProtocolDataLength
+                byte[] b = new byte[8 + 40 + 512];
+                uint outLen;
+                GCHandle h = GCHandle.Alloc(b, GCHandleType.Pinned);
+                try
+                {
+                    IntPtr inPtr = Marshal.AllocHGlobal(48);
+                    try
+                    {
+                        Marshal.Copy(q, 0, inPtr, 48);
+                        if (!SysNative.DeviceIoControl(diskHandle, 0x002D1400, inPtr, 48, h.AddrOfPinnedObject(), (uint)b.Length, out outLen, IntPtr.Zero)) { ssdTempWhy = "NVMe query refused"; return false; }
+                    }
+                    finally { Marshal.FreeHGlobal(inPtr); }
+                }
+                finally { h.Free(); }
+                if (outLen < 8 + 40 + 3) { ssdTempWhy = "NVMe log too short"; return false; }
+                // Descriptor: Version + Size (8), then ProtocolSpecificData;
+                // ProtocolDataOffset is relative to that struct.
+                int baseOff = 8 + (int)BitConverter.ToUInt32(b, 24);
+                uint dataLen = BitConverter.ToUInt32(b, 28);
+                if (dataLen < 3 || baseOff + 3 > outLen) { ssdTempWhy = "NVMe log too short"; return false; }
+                ushort kelvin = BitConverter.ToUInt16(b, baseOff + 1);
+                double c = kelvin - 273.15;
+                if (c > 0 && c < 120) { temp = c; ssdTempWhy = ""; return true; }
+                ssdTempWhy = "NVMe temp out of range";
                 return false;
             }
-            catch { return false; }
+            catch { ssdTempWhy = "exception"; return false; }
         }
 
         // ---------------- CPU temp: PawnIO, else Thermal Zone ----------------

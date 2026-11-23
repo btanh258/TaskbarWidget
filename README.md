@@ -1,4 +1,4 @@
-# Taskbar Widget 1.2.13
+# Taskbar Widget 1.2.14
 
 Một exe duy nhất trên taskbar Windows, gộp hai phần mềm:
 
@@ -16,6 +16,20 @@ Ví dụ trên taskbar (đề mục hệ thống in đậm, các mục cách nha
 ```
 CPU 12% 54° 20W | GPU 4% 44° 120W | RAM 61% 9.8/16.0 GB | VRAM 6% 0.5/8.0 GB | Disk 12% | SSD 38° | NET ↓1.2M ↑320K        [🎧 30%] | [📱 78%] | [🖱 93%]
 ```
+
+## Có gì mới trong 1.2.14
+
+- **Xung nhịp gộp vào khung GPU/VRAM:** xung GPU hiện chung khung với
+  GPU (`GPU 6% 51° 2W 2400MHz`), xung VRAM hiện chung khung với VRAM
+  (`VRAM 78% 3.1/4.0 GB 1800MHz`) — giống cách công suất đã gộp trước
+  đây. Trong panel hai dòng xung nhịp vẫn riêng để ẩn/hiện bằng mắt.
+  Nâng cấp từ bản cũ sẽ tự bật hai dòng này (trước đây ẩn mặc định).
+- **Nhiệt độ SSD trên ổ NVMe:** ngoài cách đọc cũ qua
+  StorageDeviceTemperatureProperty, app thử thêm nhật ký SMART của
+  ổ NVMe (log page 2, nhiệt độ tổng hợp). Nhiều ổ NVMe, nhất là
+  trên mini PC, không trả nhiệt độ qua cách cũ nên mục SSD không
+  hiện — giờ sẽ hiện. Nếu vẫn không đọc được, `--dump` ghi rõ lý do
+  (dòng `ssd temp:`).
 
 ## Có gì mới trong 1.2.13
 

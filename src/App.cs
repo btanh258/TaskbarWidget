@@ -11,7 +11,7 @@ namespace BatteryBar
 {
     static class Program
     {
-        public const string Version = "1.2.13";
+        public const string Version = "1.2.14";
         public const string Repo = "https://github.com/btanh258/TaskbarWidget";
         const string MutexName = "TaskbarWidget.Single";
         public const string ShowEvent = "TaskbarWidget.ShowSettings";
@@ -164,10 +164,11 @@ namespace BatteryBar
                 if (!File.Exists(FilePath))
                 {
                     // First run: mirror TraySense's default mask. On: CPU,
-                    // GPU, RAM, SSD temp, Network, CPU/GPU power. Off
-                    // (still listed in the panel, unhide with the eye):
-                    // VRAM, disk util, GPU/VRAM clock.
-                    foreach (string k in new[] { "sys:vram", "sys:disk", "sys:gpuclk", "sys:memclk" }) s.Hidden.Add(k);
+                    // GPU, RAM, SSD temp, Network, CPU/GPU power, GPU/VRAM
+                    // clock (clocks merged into the GPU/VRAM strip items
+                    // since 1.2.14). Off (still listed in the panel, unhide
+                    // with the eye): VRAM, disk util.
+                    foreach (string k in new[] { "sys:vram", "sys:disk" }) s.Hidden.Add(k);
                     return s;
                 }
                 foreach (string line in File.ReadAllLines(FilePath))
@@ -205,6 +206,10 @@ namespace BatteryBar
             // 1.2.7: GPU power is shown merged into the GPU item now, so
             // unhide it on upgrade (it was hidden by default before).
             s.Hidden.Remove("sys:gpupower");
+            // 1.2.14: GPU/VRAM clock are shown merged into the GPU/VRAM
+            // items now, so unhide them on upgrade too.
+            s.Hidden.Remove("sys:gpuclk");
+            s.Hidden.Remove("sys:memclk");
             return s;
         }
 
@@ -377,12 +382,15 @@ namespace BatteryBar
             // kind order (system kinds never change).
             bt.Sort((a, b) => { int c = string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase); return c != 0 ? c : string.Compare(a.Key, b.Key, StringComparison.Ordinal); });
             sys.Sort((a, b) => Kinds.Order(a.Kind) != Kinds.Order(b.Kind) ? Kinds.Order(a.Kind) - Kinds.Order(b.Kind) : string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
-            // Power is its own row in the panel (own eye toggle), but on
-            // the strip it joins its usage item: "CPU 12% 54° 20W".
-            // Hidden power is already filtered out above, so it only
-            // merges when shown.
-            MergePower(sys, "cpu", "cpupower");
-            MergePower(sys, "gpu", "gpupower");
+            // Power and clocks are their own rows in the panel (own eye
+            // toggle), but on the strip they join their usage item:
+            // "CPU 12% 54° 20W", "GPU 4% 44° 120W 2100MHz",
+            // "VRAM 6% 0.5/8.0 GB 1800MHz". Hidden extras are already
+            // filtered out above, so they only merge when shown.
+            MergeInto(sys, "cpu", "cpupower");
+            MergeInto(sys, "gpu", "gpupower");
+            MergeInto(sys, "gpu", "gpuclk");
+            MergeInto(sys, "vram", "memclk");
             shownBt = bt;
             shownSys = sys;
             UpdateBar(ref btBar, bt);
@@ -390,20 +398,20 @@ namespace BatteryBar
             LayoutBars();
         }
 
-        // Append a visible power reading to its usage item's strip text,
-        // and drop the standalone power item. If the usage item is missing
-        // the power item stays on its own.
-        static void MergePower(List<Reading> sys, string usageKind, string powerKind)
+        // Append a visible extra reading (power, clock) to its usage
+        // item's strip text, and drop the standalone extra item. If the
+        // usage item is missing the extra item stays on its own.
+        static void MergeInto(List<Reading> sys, string usageKind, string extraKind)
         {
-            Reading power = null, usage = null;
+            Reading extra = null, usage = null;
             foreach (var r in sys)
             {
-                if (r.Kind == powerKind) power = r;
+                if (r.Kind == extraKind) extra = r;
                 else if (r.Kind == usageKind) usage = r;
             }
-            if (power == null || usage == null) return;
-            usage.Text += " " + power.Value;
-            sys.Remove(power);
+            if (extra == null || usage == null) return;
+            usage.Text += " " + extra.Value;
+            sys.Remove(extra);
         }
 
         // Feed one cluster's strip; destroy it when the cluster is empty
