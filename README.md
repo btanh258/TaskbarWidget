@@ -1,4 +1,4 @@
-# Taskbar Widget 1.2.24
+# Taskbar Widget 1.2.25
 
 Một exe duy nhất trên taskbar Windows, gộp hai phần mềm:
 
@@ -16,6 +16,13 @@ Ví dụ trên taskbar (đề mục hệ thống in đậm, các mục cách nha
 ```
 CPU 12% 54° 20W | GPU 4% 44° 120W | RAM 61% 9.8/16.0 GB | VRAM 6% 0.5/8.0 GB | Disk 12% | SSD 38° | NET ↓1.2M ↑320K        [🎧 30%] | [📱 78%] | [🖱 93%]
 ```
+
+## Có gì mới trong 1.2.25
+
+- **Tô màu thiết bị Bluetooth khi pin dưới 10%:** giống màu
+  cảnh báo của số liệu hệ thống, icon và % pin đổi sang vàng hổ
+  phách cả trên thanh taskbar lẫn trong panel. Thiết bị đang sạc
+  thì không đổi màu (pin đang lên, không sắp hết).
 
 ## Có gì mới trong 1.2.24
 

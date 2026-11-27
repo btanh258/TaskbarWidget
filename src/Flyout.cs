@@ -302,7 +302,7 @@ namespace BatteryBar
                 ShowToast("Icon: " + Kinds.Label(app.Settings.Kind[key]));
             }, 8, true);
             if (sys) Draw(g, TileLabel(kind), fSmall, main, tile, StringAlignment.Center, StringAlignment.Center);
-            else Icons.Draw(g, row.Kind, main, new RectangleF(tile.X + 6 * s, tile.Y + 6 * s, tile.Width - 12 * s, tile.Height - 12 * s), fGlyph);
+            else Icons.Draw(g, row.Kind, row.R != null && row.R.Alert > 0 ? t.Warn : main, new RectangleF(tile.X + 6 * s, tile.Y + 6 * s, tile.Width - 12 * s, tile.Height - 12 * s), fGlyph);
 
             float x0 = Pad + 40 + 12, right = W - Pad - 32 - 10;
             float pctW = sys ? 96 : 48; // system values are longer ("12% 54°", "1850MHz")

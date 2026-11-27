@@ -11,7 +11,7 @@ namespace BatteryBar
 {
     static class Program
     {
-        public const string Version = "1.2.24";
+        public const string Version = "1.2.25";
         public const string Repo = "https://github.com/btanh258/TaskbarWidget";
         const string MutexName = "TaskbarWidget.Single";
         public const string ShowEvent = "TaskbarWidget.ShowSettings";
@@ -575,6 +575,11 @@ namespace BatteryBar
             bool newName = false;
             foreach (var r in list)
             {
+                // Bluetooth devices warn under 10% battery (1.2.25), like
+                // the system thresholds in 1.2.23. Charging devices don't
+                // warn: the battery is going up, not about to die. System
+                // readings keep the Alert their own poller set.
+                if (!Kinds.IsSystem(r.Kind)) r.Alert = r.Pct < 10 && !r.Charging ? 1 : 0;
                 Latest[r.Key] = r;
                 seen[r.Key] = DateTime.UtcNow;
                 string old;

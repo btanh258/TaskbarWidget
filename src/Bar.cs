@@ -160,7 +160,7 @@ namespace BatteryBar
                     {
                         var p = parts[i]; var wd = widths[i];
                         if (!(bool)p[3] && ((string)p[0]).Length > 1)
-                            Icons.Draw(g, (string)p[0], fg, new RectangleF(x, (height - iconH) / 2f, wd[0], iconH), glyphFont);
+                            Icons.Draw(g, (string)p[0], (bool)p[4] ? warnFg : fg, new RectangleF(x, (height - iconH) / 2f, wd[0], iconH), glyphFont);
                         else
                             g.DrawString((string)p[0], glyphFont, brush, x, (height - glyphH) / 2f + s, fmt);
                         x += wd[0] + wd[1];
@@ -183,7 +183,7 @@ namespace BatteryBar
                         }
                         else
                         {
-                            g.DrawString((string)p[2], textFont, brush, x, (height - textH) / 2f, fmt);
+                            g.DrawString((string)p[2], textFont, (bool)p[4] ? warnBrush : brush, x, (height - textH) / 2f, fmt);
                             x += wd[4];
                         }
                         if (i < parts.Count - 1)
