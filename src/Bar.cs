@@ -116,6 +116,7 @@ namespace BatteryBar
                 foreach (var r in shown)
                     parts.Add(new object[] { r.Text != null ? "" : r.Kind, r.Charging && r.Text == null, r.Text ?? (r.Pct + (settings.PercentSign ? "%" : "")), r.Text != null, r.Alert > 0 });
                 float sepW = mg.MeasureString(" | ", textFont, 1000, fmt).Width;
+                float pipeW = mg.MeasureString("|", textFont, 1000, fmt).Width;
                 float w = pad;
                 var widths = new List<float[]>(); // glyph, glyphGap, bolt, label, rest
                 foreach (var p in parts)
@@ -187,7 +188,10 @@ namespace BatteryBar
                         }
                         if (i < parts.Count - 1)
                         {
-                            g.DrawString(" | ", textFont, brush, x, (height - textH) / 2f, fmt);
+                            // The pipe sits in the middle of the gap:
+                            // drawing " | " as one string glued it to the
+                            // left item (6px before it, 17px after it).
+                            g.DrawString("|", textFont, brush, x + (sepW + itemGap - pipeW) / 2, (height - textH) / 2f, fmt);
                             x += sepW + itemGap;
                         }
                     }

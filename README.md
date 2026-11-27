@@ -1,4 +1,4 @@
-# Taskbar Widget 1.2.23
+# Taskbar Widget 1.2.24
 
 Một exe duy nhất trên taskbar Windows, gộp hai phần mềm:
 
@@ -16,6 +16,14 @@ Ví dụ trên taskbar (đề mục hệ thống in đậm, các mục cách nha
 ```
 CPU 12% 54° 20W | GPU 4% 44° 120W | RAM 61% 9.8/16.0 GB | VRAM 6% 0.5/8.0 GB | Disk 12% | SSD 38° | NET ↓1.2M ↑320K        [🎧 30%] | [📱 78%] | [🖱 93%]
 ```
+
+## Có gì mới trong 1.2.24
+
+- **Sửa khoảng cách giữa các mục trên thanh taskbar:** dấu `|`
+  ngăn cách bị dính về phía mục bên trái (cách mục trước có 6px
+  mà cách mục sau tới 17px) vì vẽ cả chuỗi `" | "` rồi mới cộng
+  khoảng cách sau đó. Giờ dấu `|` nằm chính giữa khoảng cách hai
+  mục. Tổng chiều rộng thanh không đổi.
 
 ## Có gì mới trong 1.2.23
 
