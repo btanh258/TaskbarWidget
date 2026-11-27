@@ -86,6 +86,9 @@ namespace BatteryBar
             lastLight = LightTaskbar();
             height = Math.Max(1, tb.Bottom - tb.Top);
             Color fg = lastLight ? Color.Black : Color.White;
+            // Warn amber: dark enough for a light taskbar, bright enough
+            // for a dark one (1.2.23).
+            Color warnFg = lastLight ? Color.FromArgb(0xB4, 0x53, 0x09) : Color.FromArgb(0xF5, 0x9E, 0x0B);
 
             var shown = items;
             bool empty = shown.Count == 0;
@@ -103,15 +106,15 @@ namespace BatteryBar
                 float iconH = settings.FontSize * 1.25f * s; // Bluetooth SVG icon height
 
                 // measure
-                // parts: icon kind (or ""), bolt?, text, isSystem. A system
-                // item's text starts with its heading ("CPU 12% 54°"): the
+                // parts: icon kind (or ""), bolt?, text, isSystem, alert.
+                // A system item's text starts with its heading ("CPU 12% 54°"): the
                 // heading is drawn bold, the rest regular. Items are joined
                 // by " | ". Bluetooth items draw their SVG icon instead of
                 // a font glyph.
-                var parts = new List<object[]>(); // kind, bolt?, text, isSystem
-                if (empty) parts.Add(new object[] { "", false, "--", false });
+                var parts = new List<object[]>(); // kind, bolt?, text, isSystem, alert
+                if (empty) parts.Add(new object[] { "", false, "--", false, false });
                 foreach (var r in shown)
-                    parts.Add(new object[] { r.Text != null ? "" : r.Kind, r.Charging && r.Text == null, r.Text ?? (r.Pct + (settings.PercentSign ? "%" : "")), r.Text != null });
+                    parts.Add(new object[] { r.Text != null ? "" : r.Kind, r.Charging && r.Text == null, r.Text ?? (r.Pct + (settings.PercentSign ? "%" : "")), r.Text != null, r.Alert > 0 });
                 float sepW = mg.MeasureString(" | ", textFont, 1000, fmt).Width;
                 float w = pad;
                 var widths = new List<float[]>(); // glyph, glyphGap, bolt, label, rest
@@ -146,6 +149,7 @@ namespace BatteryBar
                 using (var bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb))
                 using (var g = Graphics.FromImage(bmp))
                 using (var brush = new SolidBrush(fg))
+                using (var warnBrush = new SolidBrush(warnFg))
                 {
                     g.Clear(Color.FromArgb(1, 0, 0, 0)); // nearly invisible, but still catches clicks
                     g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
@@ -170,9 +174,10 @@ namespace BatteryBar
                             int sp = t.IndexOf(' ');
                             string label = sp < 0 ? t : t.Substring(0, sp);
                             string rest = sp < 0 ? "" : t.Substring(sp);
-                            g.DrawString(label, boldFont, brush, x, (height - textH) / 2f, fmt);
+                            Brush b = (bool)p[4] ? warnBrush : brush;
+                            g.DrawString(label, boldFont, b, x, (height - textH) / 2f, fmt);
                             x += wd[3];
-                            g.DrawString(rest, textFont, brush, x, (height - textH) / 2f, fmt);
+                            g.DrawString(rest, textFont, b, x, (height - textH) / 2f, fmt);
                             x += wd[4];
                         }
                         else

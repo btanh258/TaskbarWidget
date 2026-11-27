@@ -1,4 +1,4 @@
-# Taskbar Widget 1.2.22
+# Taskbar Widget 1.2.23
 
 Một exe duy nhất trên taskbar Windows, gộp hai phần mềm:
 
@@ -16,6 +16,14 @@ Ví dụ trên taskbar (đề mục hệ thống in đậm, các mục cách nha
 ```
 CPU 12% 54° 20W | GPU 4% 44° 120W | RAM 61% 9.8/16.0 GB | VRAM 6% 0.5/8.0 GB | Disk 12% | SSD 38° | NET ↓1.2M ↑320K        [🎧 30%] | [📱 78%] | [🖱 93%]
 ```
+
+## Có gì mới trong 1.2.23
+
+- **Tô màu cảnh báo:** số liệu đổi sang màu vàng hổ phách khi
+  vượt ngưỡng — nhiệt độ CPU/GPU trên 70°, tải CPU/GPU trên 80%,
+  RAM trên 80%. Cả trên thanh taskbar (cả mục đổi màu) lẫn trong
+  panel (con số bên phải đổi màu). Màu vàng đậm trên taskbar sáng,
+  vàng sáng trên taskbar tối, nên đọc được cả hai nền.
 
 ## Có gì mới trong 1.2.22
 

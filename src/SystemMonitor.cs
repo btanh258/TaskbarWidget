@@ -177,7 +177,7 @@ namespace BatteryBar
                     int ci = (int)Math.Round(cpu);
                     string text = "CPU " + ci + "%" + (hasCpuTemp ? " " + (int)Math.Round(cpuTemp) + "°" : "");
                     string value = ci + "%" + (hasCpuTemp ? " " + (int)Math.Round(cpuTemp) + "°" : "");
-                    list.Add(Make("sys:cpu", "CPU usage", "cpu", ci, text, value, hasCpuTemp ? TempNote(cpuTemp, 80, 90) : null, false));
+                    list.Add(Make("sys:cpu", "CPU usage", "cpu", ci, text, value, hasCpuTemp ? TempNote(cpuTemp, 80, 90) : null, false, TempLoadAlert(hasCpuTemp, cpuTemp, cpu)));
                     log.AppendLine("  cpu: " + cpu.ToString("F1") + "%" + (hasCpuTemp ? " " + cpuTemp.ToString("F0") + "C (" + cpuTempSrc + ")" : ""));
                 }
                 double cpuW;
@@ -194,7 +194,7 @@ namespace BatteryBar
                     list.Add(Make("sys:ram", "RAM usage", "ram", (int)Math.Round(ram),
                         "RAM " + (int)Math.Round(ram) + "% " + ramUsed.ToString("F1") + "/" + ramTotal.ToString("F1") + " GB",
                         (int)Math.Round(ram) + "%",
-                        ramUsed.ToString("F1") + " / " + ramTotal.ToString("F1") + " GB", false));
+                        ramUsed.ToString("F1") + " / " + ramTotal.ToString("F1") + " GB", false, ram > 80 ? 1 : 0));
                     log.AppendLine("  ram: " + ram.ToString("F1") + "% (" + ramUsed.ToString("F1") + " / " + ramTotal.ToString("F1") + " GB)");
                 }
                 // GPU usage + temperature are one item: "GPU 4% 44°"
@@ -210,7 +210,7 @@ namespace BatteryBar
                     string gtext = "GPU " + gi + "%" + (hasGpuTemp ? " " + (int)Math.Round(gpuTemp) + "°" : "");
                     string gvalue = gi + "%" + (hasGpuTemp ? " " + (int)Math.Round(gpuTemp) + "°" : "");
                     string hot = hasGpuTemp ? TempNote(gpuTemp, 80, 90) : null;
-                    list.Add(Make("sys:gpu", "GPU usage", "gpu", gi, gtext, gvalue, hot ?? GpuName(), false));
+                    list.Add(Make("sys:gpu", "GPU usage", "gpu", gi, gtext, gvalue, hot ?? GpuName(), false, TempLoadAlert(hasGpuTemp, gpuTemp, gpu)));
                     log.AppendLine("  gpu: " + gpu.ToString("F1") + "%" + (hasGpuTemp ? " " + gpuTemp.ToString("F0") + "C (" + gpuTempSrc + ")" : " (no temp: " + gpuTempWhy + ")") + (GpuName() == null ? "" : " (" + GpuName() + ")"));
                 }
                 double vramUsed;
@@ -273,9 +273,17 @@ namespace BatteryBar
             }
         }
 
-        static Reading Make(string key, string name, string kind, int pct, string text, string value, string detail, bool barless)
+        static Reading Make(string key, string name, string kind, int pct, string text, string value, string detail, bool barless, int alert = 0)
         {
-            return new Reading { Key = key, Name = name, Kind = kind, Source = "System", Pct = pct, Text = text, Value = value, Detail = detail, Barless = barless };
+            return new Reading { Key = key, Name = name, Kind = kind, Source = "System", Pct = pct, Text = text, Value = value, Detail = detail, Barless = barless, Alert = alert };
+        }
+
+        // Warn thresholds (1.2.23): CPU/GPU temp over 70C, CPU/GPU load
+        // over 80%, RAM over 80%. While a reading is over its threshold
+        // its strip item and panel value turn amber.
+        static int TempLoadAlert(bool hasTemp, double temp, double load)
+        {
+            return (hasTemp && temp > 70) || load > 80 ? 1 : 0;
         }
 
         // TraySense seg_temp thresholds: CPU/GPU 80C orange, 90C red; SSD 65C / 75C.

@@ -11,7 +11,7 @@ namespace BatteryBar
 {
     static class Program
     {
-        public const string Version = "1.2.22";
+        public const string Version = "1.2.23";
         public const string Repo = "https://github.com/btanh258/TaskbarWidget";
         const string MutexName = "TaskbarWidget.Single";
         public const string ShowEvent = "TaskbarWidget.ShowSettings";
@@ -607,7 +607,7 @@ namespace BatteryBar
             foreach (var r in Fresh())
             {
                 if (Settings.Hidden.Contains(r.Key)) continue;
-                var c = new Reading { Key = r.Key, Name = r.Name, Pct = r.Pct, Charging = r.Charging, Source = r.Source, Kind = KindOf(r), Text = r.Text, Value = r.Value, Detail = r.Detail, Barless = r.Barless };
+                var c = new Reading { Key = r.Key, Name = r.Name, Pct = r.Pct, Charging = r.Charging, Source = r.Source, Kind = KindOf(r), Text = r.Text, Value = r.Value, Detail = r.Detail, Barless = r.Barless, Alert = r.Alert };
                 if (Kinds.IsSystem(c.Kind)) { if (Settings.ShowSystem) sys.Add(c); }
                 else if (Settings.ShowBluetooth) bt.Add(c);
             }

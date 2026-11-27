@@ -21,7 +21,7 @@ namespace BatteryBar
 
         class Hit { public RectangleF R; public Action Act; }
         class Row { public string Key, Name, Kind; public Reading R; public bool Hidden; }
-        class Theme { public Color Bg, Hover, Card, Text, Sub, Track, Fill, Line; }
+        class Theme { public Color Bg, Hover, Card, Text, Sub, Track, Fill, Line, Warn; }
 
         readonly AppContext app;
         readonly List<Hit> hits = new List<Hit>();
@@ -62,8 +62,8 @@ namespace BatteryBar
             settingsPage = settings;
             bool light = Bar.LightTaskbar();
             t = light
-                ? new Theme { Bg = C(0xF9F9F9), Hover = C(0xEAEAEA), Card = C(0xEFEFEF), Text = C(0x1A1A1A), Sub = C(0x5F5F5F), Track = C(0xD6D6D6), Fill = C(0x1A1A1A), Line = C(0xDDDDDD) }
-                : new Theme { Bg = C(0x2B2B2B), Hover = C(0x3A3A3A), Card = C(0x353535), Text = C(0xFFFFFF), Sub = C(0xA8A8A8), Track = C(0x4D4D4D), Fill = C(0xFFFFFF), Line = C(0x3F3F3F) };
+                ? new Theme { Bg = C(0xF9F9F9), Hover = C(0xEAEAEA), Card = C(0xEFEFEF), Text = C(0x1A1A1A), Sub = C(0x5F5F5F), Track = C(0xD6D6D6), Fill = C(0x1A1A1A), Line = C(0xDDDDDD), Warn = C(0xB45309) }
+                : new Theme { Bg = C(0x2B2B2B), Hover = C(0x3A3A3A), Card = C(0x353535), Text = C(0xFFFFFF), Sub = C(0xA8A8A8), Track = C(0x4D4D4D), Fill = C(0xFFFFFF), Line = C(0x3F3F3F), Warn = C(0xF59E0B) };
             float ns = app.Scale();
             if (fTitle == null || ns != s) { s = ns; MakeFonts(); }
             if (!IsHandleCreated) CreateHandle();
@@ -307,8 +307,9 @@ namespace BatteryBar
             float x0 = Pad + 40 + 12, right = W - Pad - 32 - 10;
             float pctW = sys ? 96 : 48; // system values are longer ("12% 54°", "1850MHz")
             string pct = on ? (row.R.Value ?? (row.R.Pct + "%")) : "";
+            Color pc = row.R != null && row.R.Alert > 0 ? t.Warn : main;
             Draw(g, row.Name, fName, main, Rf(x0, y + 10, right - x0 - pctW, 20), StringAlignment.Near, StringAlignment.Center);
-            Draw(g, pct, fPct, main, Rf(right - pctW, y + 10, pctW, 20), StringAlignment.Far, StringAlignment.Center);
+            Draw(g, pct, fPct, pc, Rf(right - pctW, y + 10, pctW, 20), StringAlignment.Far, StringAlignment.Center);
 
             if (on && !row.R.Barless)
             {

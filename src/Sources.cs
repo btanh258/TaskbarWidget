@@ -23,6 +23,7 @@ namespace BatteryBar
         public bool Charging;
         public string Text, Value, Detail;
         public bool Barless;
+        public int Alert; // 0 normal, 1 warn (a threshold is crossed, 1.2.23)
     }
 
     static class Kinds
